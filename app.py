@@ -2,9 +2,11 @@ import streamlit as st
 import anthropic
 import gspread
 from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
+import pandas as pd
+import json
 from dotenv import load_dotenv
 import os
-import pandas as pd
 
 load_dotenv()
 
@@ -13,68 +15,129 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive"
 ]
 
-def connect_google_drive():
-    creds = Credentials.from_service_account_file("credentials.json", scopes=SCOPES)
+def get_credentials():
+    try:
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        return Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+    except:
+        return Credentials.from_service_account_file("credentials.json", scopes=SCOPES)
+
+def get_folder_id_from_url(url):
+    if "folders/" in url:
+        return url.split("folders/")[1].split("?")[0]
+    return url
+
+def scan_folder(folder_id):
+    creds = get_credentials()
+    service = build("drive", "v3", credentials=creds)
+    results = service.files().list(
+        q=f"'{folder_id}' in parents and trashed=false",
+        fields="files(id, name, mimeType)"
+    ).execute()
+    return results.get("files", [])
+
+def read_sheet(file_id):
+    creds = get_credentials()
     client = gspread.authorize(creds)
-    return client
-
-def get_sheet_data(sheet_url):
-    client = connect_google_drive()
-    sheet = client.open_by_url(sheet_url).sheet1
+    sheet = client.open_by_key(file_id).sheet1
     data = sheet.get_all_records()
-    return pd.DataFrame(data)
+    return pd.DataFrame(data).to_string() if data else ""
 
-def ask_claude(question, data_context):
-    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+def read_doc(file_id):
+    creds = get_credentials()
+    service = build("docs", "v1", credentials=creds)
+    doc = service.documents().get(documentId=file_id).execute()
+    content = ""
+    for element in doc.get("body", {}).get("content", []):
+        if "paragraph" in element:
+            for part in element["paragraph"].get("elements", []):
+                content += part.get("textRun", {}).get("content", "")
+    return content
+
+def read_all_files(folder_id):
+    files = scan_folder(folder_id)
+    all_data = {}
+    for f in files:
+        try:
+            if f["mimeType"] == "application/vnd.google-apps.spreadsheet":
+                all_data[f["name"]] = f"[Google Sheet]\n{read_sheet(f['id'])}"
+            elif f["mimeType"] == "application/vnd.google-apps.document":
+                all_data[f["name"]] = f"[Google Doc]\n{read_doc(f['id'])}"
+        except Exception as e:
+            all_data[f["name"]] = f"[ไม่สามารถอ่านได้: {e}]"
+    return all_data, files
+
+def ask_claude(question, all_data):
+    try:
+        api_key = st.secrets["ANTHROPIC_API_KEY"]
+    except:
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+    
+    client = anthropic.Anthropic(api_key=api_key)
+    
+    context = "\n\n".join([f"=== {name} ===\n{content}" 
+                           for name, content in all_data.items()])
+    
     message = client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=1024,
-        messages=[
-            {
-                "role": "user",
-                "content": f"""You are a helpful assistant. Answer in the same language as the question.
-                
-Here is the data from Google Sheets:
-{data_context}
+        messages=[{
+            "role": "user",
+            "content": f"""คุณเป็น AI assistant ที่ช่วยวิเคราะห์ข้อมูล ตอบในภาษาเดียวกับคำถาม
 
-Question: {question}"""
-            }
-        ]
+ข้อมูลจาก Google Drive:
+{context}
+
+คำถาม: {question}"""
+        }]
     )
     return message.content[0].text
 
-st.title("🤖 Chatbot จาก Google Sheets")
+st.title("🤖 Chatbot จาก Google Drive")
 st.markdown("---")
 
-sheet_url = st.text_input("📎 วาง Google Sheets URL ที่นี่:", placeholder="https://docs.google.com/spreadsheets/d/...")
+folder_input = st.text_input(
+    "📁 วาง Google Drive Folder URL หรือ Folder ID:",
+    placeholder="https://drive.google.com/drive/folders/xxxx"
+)
 
-if sheet_url:
-    with st.spinner("กำลังโหลดข้อมูล..."):
+if folder_input:
+    folder_id = get_folder_id_from_url(folder_input.strip())
+    
+    with st.spinner("กำลังสแกนไฟล์ในโฟลเดอร์..."):
         try:
-            df = get_sheet_data(sheet_url)
-            st.success(f"โหลดข้อมูลสำเร็จ — {len(df)} แถว, {len(df.columns)} คอลัมน์")
-            with st.expander("ดูข้อมูล"):
-                st.dataframe(df)
+            all_data, files = read_all_files(folder_id)
             
+            st.success(f"พบไฟล์ทั้งหมด {len(files)} ไฟล์")
+            
+            with st.expander("ดูไฟล์ทั้งหมด"):
+                for f in files:
+                    icon = "📊" if "spreadsheet" in f["mimeType"] else "📄"
+                    st.write(f"{icon} {f['name']}")
+
             if "messages" not in st.session_state:
                 st.session_state.messages = []
+            if "folder_id" not in st.session_state or st.session_state.folder_id != folder_id:
+                st.session_state.messages = []
+                st.session_state.folder_id = folder_id
 
             for msg in st.session_state.messages:
                 with st.chat_message(msg["role"]):
                     st.write(msg["content"])
 
-            if question := st.chat_input("ถามอะไรก็ได้เกี่ยวกับข้อมูลนี้..."):
+            if question := st.chat_input("ถามอะไรก็ได้เกี่ยวกับข้อมูลในโฟลเดอร์นี้..."):
                 st.session_state.messages.append({"role": "user", "content": question})
                 with st.chat_message("user"):
                     st.write(question)
 
                 with st.chat_message("assistant"):
                     with st.spinner("กำลังคิด..."):
-                        answer = ask_claude(question, df.to_string())
+                        answer = ask_claude(question, all_data)
                         st.write(answer)
                         st.session_state.messages.append({"role": "assistant", "content": answer})
 
         except Exception as e:
             st.error(f"เกิดข้อผิดพลาด: {e}")
 else:
-    st.info("กรุณาใส่ Google Sheets URL เพื่อเริ่มต้น")
+    st.info("กรุณาใส่ Google Drive Folder URL เพื่อเริ่มต้น")
