@@ -14,13 +14,24 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive"
 ]
 
+# def get_credentials():
+#     try:
+#         creds_dict = dict(st.secrets["gcp_service_account"])
+#         creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+#         return Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+#     except:
+#         return Credentials.from_service_account_file("credentials.json", scopes=SCOPES)
+
 def get_credentials():
     try:
         creds_dict = dict(st.secrets["gcp_service_account"])
         creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-        return Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-    except:
+        creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+        return creds
+    except Exception as e:
+        st.error(f"Credentials error: {e}")
         return Credentials.from_service_account_file("credentials.json", scopes=SCOPES)
+
 
 def get_folder_id_from_url(url):
     if "folders/" in url:
