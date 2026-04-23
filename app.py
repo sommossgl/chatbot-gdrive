@@ -30,10 +30,12 @@ def get_credentials():
 #     return gspread.Client(auth=creds)
 
 def get_gspread_client():
-    creds = get_credentials()
-    # refresh token ก่อนใช้งาน
-    creds.refresh(Request())
-    return gspread.Client(auth=creds)
+    try:
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        return gspread.service_account_from_dict(creds_dict)
+    except Exception as e:
+        return gspread.service_account(filename="credentials.json")
 
 def get_folder_id_from_url(url):
     if "folders/" in url:
