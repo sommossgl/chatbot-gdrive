@@ -6,9 +6,6 @@ from googleapiclient.discovery import build
 import pandas as pd
 from dotenv import load_dotenv
 import os
-import gspread
-from google.oauth2.service_account import Credentials
-from google.auth.transport.requests import Request
 
 load_dotenv()
 
@@ -24,18 +21,6 @@ def get_credentials():
         return Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
     except Exception as e:
         return Credentials.from_service_account_file("credentials.json", scopes=SCOPES)
-
-# def get_gspread_client():
-#     creds = get_credentials()
-#     return gspread.Client(auth=creds)
-
-def get_gspread_client():
-    try:
-        creds_dict = dict(st.secrets["gcp_service_account"])
-        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-        return gspread.service_account_from_dict(creds_dict)
-    except Exception as e:
-        return gspread.service_account(filename="credentials.json")
 
 def get_folder_id_from_url(url):
     if "folders/" in url:
@@ -54,8 +39,6 @@ def scan_folder(folder_id):
 def read_sheet(file_id):
     creds = get_credentials()
     service = build("drive", "v3", credentials=creds)
-    
-    # Export Google Sheet เป็น CSV แล้วอ่าน
     request = service.files().export_media(
         fileId=file_id,
         mimeType="text/csv"
@@ -86,6 +69,8 @@ def read_all_files(folder_id):
             elif f["mimeType"] == "application/vnd.google-apps.document":
                 content = read_doc(f['id'])
                 all_data[f["name"]] = f"[Google Doc]\n{content}"
+            else:
+                errors.append(f"{f['name']}: unsupported type {f['mimeType']}")
         except Exception as e:
             errors.append(f"{f['name']}: {str(e)}")
             all_data[f["name"]] = f"[Error: {str(e)}]"
@@ -150,10 +135,14 @@ if folder_input:
                     icon = "📊" if "spreadsheet" in f["mimeType"] else "📄"
                     st.write(f"{icon} {f['name']}")
 
-            if errors:
-                with st.expander("❌ Errors"):
+            with st.expander("❌ Errors / Status"):
+                if errors:
                     for e in errors:
                         st.error(e)
+                else:
+                    st.write("ไม่มี error")
+                st.write(f"all_data keys: {list(all_data.keys())}")
+                st.write(f"all_data lengths: {[(k, len(v)) for k, v in all_data.items()]}")
 
             with st.expander("🔍 Debug: ข้อมูลที่อ่านได้"):
                 for name, content in all_data.items():
