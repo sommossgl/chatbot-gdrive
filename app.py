@@ -37,12 +37,28 @@ def scan_folder(folder_id):
     ).execute()
     return results.get("files", [])
 
+# def read_sheet(file_id):
+#     creds = get_credentials()
+#     client = gspread.authorize(creds)
+#     sheet = client.open_by_key(file_id).sheet1
+#     data = sheet.get_all_records()
+#     return pd.DataFrame(data).to_string() if data else ""
+
 def read_sheet(file_id):
     creds = get_credentials()
     client = gspread.authorize(creds)
-    sheet = client.open_by_key(file_id).sheet1
-    data = sheet.get_all_records()
-    return pd.DataFrame(data).to_string() if data else ""
+    workbook = client.open_by_key(file_id)
+    
+    all_sheets = ""
+    for sheet in workbook.worksheets():
+        try:
+            data = sheet.get_all_records()
+            if data:
+                df = pd.DataFrame(data)
+                all_sheets += f"\n--- Tab: {sheet.title} ---\n{df.to_string()}\n"
+        except:
+            pass
+    return all_sheets if all_sheets else ""
 
 def read_doc(file_id):
     creds = get_credentials()
