@@ -125,6 +125,18 @@ folder_input = st.text_input(
 )
 
 if folder_input:
+    # Debug secrets
+    try:
+        secret_keys = list(st.secrets.keys())
+        st.write(f"Secret keys: {secret_keys}")
+        if "gcp_service_account" in st.secrets:
+            st.write("✅ gcp_service_account found")
+            st.write(f"client_email: {st.secrets['gcp_service_account']['client_email']}")
+        else:
+            st.write("❌ gcp_service_account NOT found")
+    except Exception as e:
+        st.write(f"Secrets error: {e}")
+
     folder_id = get_folder_id_from_url(folder_input.strip())
 
     with st.spinner("กำลังสแกนไฟล์ในโฟลเดอร์..."):
