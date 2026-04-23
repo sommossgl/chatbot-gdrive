@@ -4,7 +4,6 @@ import gspread
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 import pandas as pd
-import json
 from dotenv import load_dotenv
 import os
 
@@ -37,18 +36,10 @@ def scan_folder(folder_id):
     ).execute()
     return results.get("files", [])
 
-# def read_sheet(file_id):
-#     creds = get_credentials()
-#     client = gspread.authorize(creds)
-#     sheet = client.open_by_key(file_id).sheet1
-#     data = sheet.get_all_records()
-#     return pd.DataFrame(data).to_string() if data else ""
-
 def read_sheet(file_id):
     creds = get_credentials()
     client = gspread.authorize(creds)
     workbook = client.open_by_key(file_id)
-    
     all_sheets = ""
     for sheet in workbook.worksheets():
         try:
@@ -56,8 +47,8 @@ def read_sheet(file_id):
             if values:
                 df = pd.DataFrame(values[1:], columns=values[0])
                 all_sheets += f"\n--- Tab: {sheet.title} ---\n{df.to_string()}\n"
-        except:
-            pass
+        except Exception as e:
+            all_sheets += f"\n--- Tab: {sheet.title} --- [Error: {e}]\n"
     return all_sheets if all_sheets else ""
 
 def read_doc(file_id):
@@ -74,27 +65,31 @@ def read_doc(file_id):
 def read_all_files(folder_id):
     files = scan_folder(folder_id)
     all_data = {}
+    errors = []
     for f in files:
         try:
             if f["mimeType"] == "application/vnd.google-apps.spreadsheet":
-                all_data[f["name"]] = f"[Google Sheet]\n{read_sheet(f['id'])}"
+                content = read_sheet(f['id'])
+                all_data[f["name"]] = f"[Google Sheet]\n{content}"
             elif f["mimeType"] == "application/vnd.google-apps.document":
-                all_data[f["name"]] = f"[Google Doc]\n{read_doc(f['id'])}"
+                content = read_doc(f['id'])
+                all_data[f["name"]] = f"[Google Doc]\n{content}"
         except Exception as e:
-            all_data[f["name"]] = f"[ไม่สามารถอ่านได้: {e}]"
-    return all_data, files
+            errors.append(f"{f['name']}: {str(e)}")
+            all_data[f["name"]] = f"[Error: {str(e)}]"
+    return all_data, files, errors
 
 def ask_claude(question, all_data):
     try:
         api_key = st.secrets["ANTHROPIC_API_KEY"]
     except:
         api_key = os.getenv("ANTHROPIC_API_KEY")
-    
+
     client = anthropic.Anthropic(api_key=api_key)
-    
-    context = "\n\n".join([f"=== {name} ===\n{content}" 
+
+    context = "\n\n".join([f"=== {name} ===\n{content}"
                            for name, content in all_data.items()])
-    
+
     message = client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=1024,
@@ -120,14 +115,23 @@ folder_input = st.text_input(
 
 if folder_input:
     folder_id = get_folder_id_from_url(folder_input.strip())
-    
+
     with st.spinner("กำลังสแกนไฟล์ในโฟลเดอร์..."):
         try:
-            all_data, files = read_all_files(folder_id)
-            
+            all_data, files, errors = read_all_files(folder_id)
+
             st.success(f"พบไฟล์ทั้งหมด {len(files)} ไฟล์")
-            
-            # Debug: แสดงข้อมูลที่อ่านได้
+
+            with st.expander("ดูไฟล์ทั้งหมด"):
+                for f in files:
+                    icon = "📊" if "spreadsheet" in f["mimeType"] else "📄"
+                    st.write(f"{icon} {f['name']}")
+
+            if errors:
+                with st.expander("❌ Errors"):
+                    for e in errors:
+                        st.error(e)
+
             with st.expander("🔍 Debug: ข้อมูลที่อ่านได้"):
                 for name, content in all_data.items():
                     st.write(f"**{name}:** {len(content)} characters")
