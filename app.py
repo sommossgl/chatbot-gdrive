@@ -14,24 +14,17 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive"
 ]
 
-# def get_credentials():
-#     try:
-#         creds_dict = dict(st.secrets["gcp_service_account"])
-#         creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-#         return Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-#     except:
-#         return Credentials.from_service_account_file("credentials.json", scopes=SCOPES)
-
 def get_credentials():
     try:
         creds_dict = dict(st.secrets["gcp_service_account"])
         creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-        creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-        return creds
+        return Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
     except Exception as e:
-        st.error(f"Credentials error: {e}")
         return Credentials.from_service_account_file("credentials.json", scopes=SCOPES)
 
+def get_gspread_client():
+    creds = get_credentials()
+    return gspread.Client(auth=creds)
 
 def get_folder_id_from_url(url):
     if "folders/" in url:
@@ -48,14 +41,13 @@ def scan_folder(folder_id):
     return results.get("files", [])
 
 def read_sheet(file_id):
-    creds = get_credentials()
-    client = gspread.authorize(creds)
+    client = get_gspread_client()
     workbook = client.open_by_key(file_id)
     all_sheets = ""
     for sheet in workbook.worksheets():
         try:
             values = sheet.get_all_values()
-            if len(values) > 1:
+            if len(values) > 0:
                 text = "\n".join(["\t".join(row) for row in values])
                 all_sheets += f"\n--- Tab: {sheet.title} ---\n{text}\n"
         except Exception as e:
@@ -97,7 +89,6 @@ def ask_claude(question, all_data):
         api_key = os.getenv("ANTHROPIC_API_KEY")
 
     client = anthropic.Anthropic(api_key=api_key)
-
     context = "\n\n".join([f"=== {name} ===\n{content}"
                            for name, content in all_data.items()])
 
@@ -146,7 +137,7 @@ if folder_input:
             with st.expander("🔍 Debug: ข้อมูลที่อ่านได้"):
                 for name, content in all_data.items():
                     st.write(f"**{name}:** {len(content)} characters")
-                    st.text(content[:500])
+                    st.text(content[:300])
 
             if "messages" not in st.session_state:
                 st.session_state.messages = []
@@ -171,5 +162,6 @@ if folder_input:
 
         except Exception as e:
             st.error(f"เกิดข้อผิดพลาด: {e}")
+            st.exception(e)
 else:
     st.info("กรุณาใส่ Google Drive Folder URL เพื่อเริ่มต้น")
