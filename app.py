@@ -52,18 +52,16 @@ def scan_folder(folder_id):
     return results.get("files", [])
 
 def read_sheet(file_id):
-    client = get_gspread_client()
-    workbook = client.open_by_key(file_id)
-    all_sheets = ""
-    for sheet in workbook.worksheets():
-        try:
-            values = sheet.get_all_values()
-            if len(values) > 0:
-                text = "\n".join(["\t".join(row) for row in values])
-                all_sheets += f"\n--- Tab: {sheet.title} ---\n{text}\n"
-        except Exception as e:
-            all_sheets += f"\n--- Tab: {sheet.title} --- [Error: {e}]\n"
-    return all_sheets
+    creds = get_credentials()
+    service = build("drive", "v3", credentials=creds)
+    
+    # Export Google Sheet เป็น CSV แล้วอ่าน
+    request = service.files().export_media(
+        fileId=file_id,
+        mimeType="text/csv"
+    )
+    content = request.execute()
+    return content.decode("utf-8")
 
 def read_doc(file_id):
     creds = get_credentials()
