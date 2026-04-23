@@ -44,12 +44,12 @@ def read_sheet(file_id):
     for sheet in workbook.worksheets():
         try:
             values = sheet.get_all_values()
-            if values:
-                df = pd.DataFrame(values[1:], columns=values[0])
-                all_sheets += f"\n--- Tab: {sheet.title} ---\n{df.to_string()}\n"
+            if len(values) > 1:
+                text = "\n".join(["\t".join(row) for row in values])
+                all_sheets += f"\n--- Tab: {sheet.title} ---\n{text}\n"
         except Exception as e:
             all_sheets += f"\n--- Tab: {sheet.title} --- [Error: {e}]\n"
-    return all_sheets if all_sheets else ""
+    return all_sheets
 
 def read_doc(file_id):
     creds = get_credentials()
