@@ -127,10 +127,11 @@ if folder_input:
             
             st.success(f"พบไฟล์ทั้งหมด {len(files)} ไฟล์")
             
-            with st.expander("ดูไฟล์ทั้งหมด"):
-                for f in files:
-                    icon = "📊" if "spreadsheet" in f["mimeType"] else "📄"
-                    st.write(f"{icon} {f['name']}")
+            # Debug: แสดงข้อมูลที่อ่านได้
+            with st.expander("🔍 Debug: ข้อมูลที่อ่านได้"):
+                for name, content in all_data.items():
+                    st.write(f"**{name}:** {len(content)} characters")
+                    st.text(content[:500])
 
             if "messages" not in st.session_state:
                 st.session_state.messages = []
