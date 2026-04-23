@@ -9,6 +9,7 @@ import io
 import PyPDF2
 import docx
 import openpyxl
+from pptx import Presentation
 
 load_dotenv()
 
@@ -100,6 +101,16 @@ def read_xlsx(file_id):
             text += row_text + "\n"
     return text
 
+def read_pptx(file_id):
+    content = download_file(file_id)
+    prs = Presentation(io.BytesIO(content))
+    text = ""
+    for slide in prs.slides:
+        for shape in slide.shapes:
+            if hasattr(shape, "text"):
+                text += shape.text + "\n"
+    return text.strip()
+
 def read_file(f):
     mime = f["mimeType"]
     fid = f["id"]
@@ -114,7 +125,8 @@ def read_file(f):
         return "[Google Slides]\n" + export_as_text(fid)
 
     elif mime == "application/vnd.openxmlformats-officedocument.presentationml.presentation":
-        return "[PPTX]\n" + export_as_text(fid)
+        text = read_pptx(fid)
+        return "[PPTX]\n" + text if text else None
 
     elif mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
         return "[DOCX]\n" + read_docx(fid)
@@ -125,7 +137,7 @@ def read_file(f):
     elif mime == "application/pdf":
         text = read_pdf(fid)
         if not text:
-            return None  # PDF ที่เป็นรูป ข้ามเลย
+            return None
         return "[PDF]\n" + text
 
     return None
@@ -173,12 +185,11 @@ def ask_claude(question, all_data):
     )
     return message.content[0].text
 
-# ==================== UI ====================
 st.title("🤖 Chatbot จาก Google Drive")
 st.markdown("---")
 
 folder_input = st.text_input(
-    "📁 วาง Google Drive URL (โฟลเดอร์, Sheet, Doc, Slides):",
+    "📁 วาง Google Drive URL (โฟลเดอร์, Sheet, Doc, Slides, PDF, PPTX, DOCX, XLSX):",
     placeholder="https://drive.google.com/drive/folders/xxxx"
 )
 
@@ -209,16 +220,19 @@ if folder_input:
             elif input_type == "sheet":
                 content = export_as_csv(file_id)
                 all_data = {"Google Sheet": f"[Google Sheet]\n{content}"}
+                errors = []
                 st.success("โหลด Google Sheet สำเร็จ")
 
             elif input_type == "slides":
                 content = export_as_text(file_id)
                 all_data = {"Google Slides": f"[Google Slides]\n{content}"}
+                errors = []
                 st.success("โหลด Google Slides สำเร็จ")
 
             elif input_type == "doc":
                 content = export_as_text(file_id)
                 all_data = {"Google Doc": f"[Google Doc]\n{content}"}
+                errors = []
                 st.success("โหลด Google Doc สำเร็จ")
 
             if "messages" not in st.session_state:
