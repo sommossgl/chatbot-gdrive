@@ -6,6 +6,9 @@ from googleapiclient.discovery import build
 import pandas as pd
 from dotenv import load_dotenv
 import os
+import gspread
+from google.oauth2.service_account import Credentials
+from google.auth.transport.requests import Request
 
 load_dotenv()
 
@@ -22,8 +25,14 @@ def get_credentials():
     except Exception as e:
         return Credentials.from_service_account_file("credentials.json", scopes=SCOPES)
 
+# def get_gspread_client():
+#     creds = get_credentials()
+#     return gspread.Client(auth=creds)
+
 def get_gspread_client():
     creds = get_credentials()
+    # refresh token ก่อนใช้งาน
+    creds.refresh(Request())
     return gspread.Client(auth=creds)
 
 def get_folder_id_from_url(url):
